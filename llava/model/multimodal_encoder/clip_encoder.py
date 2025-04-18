@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig
+from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, CLIPTextModel, CLIPTextModelWithProjection, CLIPVisionModelWithProjection
 
 
 class CLIPVisionTower(nn.Module):
@@ -30,7 +30,23 @@ class CLIPVisionTower(nn.Module):
         self.vision_tower = CLIPVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
         self.vision_tower.requires_grad_(False)
 
+        self.text_tower = CLIPTextModel.from_pretrained(self.vision_tower_name, device_map=device_map)
+        self.text_tower.requires_grad_(False)
+        self.vision_projection = CLIPVisionModelWithProjection.from_pretrained(
+            self.vision_tower_name,
+            torch_dtype=torch.float16,
+            device_map='cuda',
+        ).visual_projection
+        self.vision_projection.requires_grad_(False)
+        self.text_projection = CLIPTextModelWithProjection.from_pretrained(self.vision_tower_name, device_map=device_map).text_projection
+        self.text_projection.requires_grad_(False)
         self.is_loaded = True
+
+    def encode_clip_text(self, clip_input_ids):
+        text_features = self.text_tower(clip_input_ids)
+        # text_features = text_features.last_hidden_state # all text
+        text_features = text_features.pooler_output # one text feature
+        return text_features
 
     # FasterVLM
     def feature_select(self, image_forward_outs):
@@ -93,7 +109,6 @@ class CLIPVisionTower(nn.Module):
     @property
     def num_patches(self):
         return (self.config.image_size // self.config.patch_size) ** 2
-
 
 
 class CLIPVisionTowerS2(CLIPVisionTower):

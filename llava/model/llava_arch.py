@@ -138,13 +138,46 @@ class LlavaMetaForCausalLM(ABC):
         return self.get_model().get_vision_tower()
 
     # FasterVLM
-    def encode_images(self, images):
+    def encode_images(self, images, clip_input_ids):
         image_features, image_attentions = self.get_model().get_vision_tower()(images) # (B, N, C), (B, M, N) = (1, 576, 1024), (1, 16, 576)
 
         # image_attentions = image_attentions.max(dim=1)[0] # (B, N) = (1, 576)
+        print(image_attentions.shape)
         image_attentions = image_attentions.mean(dim=1) # (B, N) = (1, 576)
-
+        print(image_attentions.shape)
+        exit(0)
         B, N = image_features.shape[:2]
+        if clip_input_ids is not None and images is not None:
+            text_attentions = torch.zeros_like(image_attentions) # (B, N) = (1, 576)
+            clip_input_ids = clip_input_ids.squeeze(0)
+            clip_input_ids = [
+                clip_input_ids[0, i : i + 77].unsqueeze(0) for i in range(0, clip_input_ids.size(1), 77)
+            ]
+            clip_input_ids = [
+                self.get_model().get_vision_tower().encode_clip_text(i) for i in clip_input_ids
+            ]
+            clip_input_ids = torch.cat(
+                [i.view(-1, 768) for i in clip_input_ids], dim=0
+            )
+            clip_input_embed = (
+                self.get_model().get_vision_tower().text_projection(clip_input_ids)
+            )
+            image_features_ = image_features[0]
+            image_features_ = self.get_model().get_vision_tower().vision_projection(image_features_)
+            attn = torch.stack(
+                [
+                    torch.functional.F.cosine_similarity(
+                        t, image_features_, dim=1
+                    )
+                    # * 4.6052  # logit_scale
+                    for t in clip_input_embed
+                ]
+            )
+            text_attentions = torch.nn.functional.softmax(attn, dim=1).mean(0)
+            text_weight = 0.01
+            image_weight = 1 - text_weight
+            combined_attentions = image_weight * image_attentions + text_weight * text_attentions
+            image_attentions = combined_attentions
         visual_token_num = self.get_visual_token_num() # T
 
         # prune visual tokens by random scores
@@ -161,12 +194,12 @@ class LlavaMetaForCausalLM(ABC):
         index_mask.scatter_(1, token_indices, True) # (B, N)
 
         image_features = self.get_model().mm_projector(image_features) # (B, N, D)
-        
+
         return image_features, index_mask, image_attentions
 
     # FasterVLM
     def prepare_inputs_labels_for_multimodal(
-        self, input_ids, position_ids, attention_mask, past_key_values, labels,
+        self, input_ids, clip_input_ids, position_ids, attention_mask, past_key_values, labels,
         images, image_sizes=None
     ):
         vision_tower = self.get_vision_tower()
@@ -177,7 +210,7 @@ class LlavaMetaForCausalLM(ABC):
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
-            image_features, index_masks, image_attns = self.encode_images(concat_images)
+            image_features, index_masks, image_attns = self.encode_images(concat_images, clip_input_ids)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             index_masks = torch.split(index_masks, split_sizes, dim=0)
@@ -247,7 +280,7 @@ class LlavaMetaForCausalLM(ABC):
             else:
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
-            image_features, index_masks, image_attns = self.encode_images(images)
+            image_features, index_masks, image_attns = self.encode_images(images, clip_input_ids)
             new_image_features = []
             for image_feature, index_mask in zip(image_features, index_masks):
                 image_feature = image_feature[index_mask]

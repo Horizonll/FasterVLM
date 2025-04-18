@@ -36,7 +36,7 @@ def eval_model(args):
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name, visual_token_num=args.visual_token_num)
+    tokenizer, clip_tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name, visual_token_num=args.visual_token_num)
 
     # Data
     questions = json.load(open(os.path.expanduser(args.question_file), "r"))
@@ -78,10 +78,11 @@ def eval_model(args):
         prompt = conv.get_prompt()
 
         input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
-
+        clip_input_ids = clip_tokenizer(prompt, return_tensors='pt').input_ids.unsqueeze(0).cuda()
         with torch.inference_mode():
             output_ids, v_token_num, image_attns = model.generate(
                 input_ids,
+                clip_input_ids,
                 images=images,
                 image_sizes=image_sizes,
                 do_sample=True if args.temperature > 0 else False,

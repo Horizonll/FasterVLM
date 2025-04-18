@@ -6,9 +6,9 @@ TOKEN=${1}
 PARAM="n_${TOKEN}"
 
 python -W ignore -m llava.eval.model_vqa_loader \
-    --model-path /path/to/checkpoint/${CKPT} \
+    --model-path liuhaotian/llava-v1.5-7b \
     --question-file ./playground/data/eval/pope/llava_pope_test.jsonl \
-    --image-folder ./playground/data/eval/pope/val2014 \
+    --image-folder ~/WORK/LLaVA/playground/data/eval/pope/val2014 \
     --answers-file ./playground/data/eval/pope/answers/${CKPT}/${METHOD}/${PARAM}.jsonl \
     --visual-token-num ${TOKEN} \
     --temperature 0 \

@@ -87,6 +87,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 labels
             ) = self.prepare_inputs_labels_for_multimodal(
                 input_ids,
+                None,
                 position_ids,
                 attention_mask,
                 past_key_values,
@@ -112,6 +113,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
     def generate(
         self,
         inputs: Optional[torch.Tensor] = None,
+        clip_inputs: Optional[torch.Tensor] = None,
         images: Optional[torch.Tensor] = None,
         image_sizes: Optional[torch.Tensor] = None,
         **kwargs,
@@ -133,6 +135,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
                 cls_attn
             ) = self.prepare_inputs_labels_for_multimodal(
                 inputs,
+                clip_inputs,
                 position_ids,
                 attention_mask,
                 None,
